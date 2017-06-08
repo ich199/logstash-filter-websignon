@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name = 'logstash-filter-websignon'
-  s.version         = '0.0.1'
-  s.licenses = ['Apache License (2.0)']
+  s.version         = '0.1.2'
+  s.licenses = ['Apache-2.0']
   s.summary = "This filter queries websignon to retrieve user details from a given username."
   s.description     = "This gem is a Logstash plugin required to be installed on top of the Logstash core pipeline using $LS_HOME/bin/logstash-plugin install gemname. This gem is not a stand-alone program"
   s.authors = ["Iain Hammond"]
@@ -11,18 +11,18 @@ Gem::Specification.new do |s|
 
   # Files
   s.files = Dir['lib/**/*','spec/**/*','vendor/**/*','*.gemspec','*.md','CONTRIBUTORS','Gemfile','LICENSE','NOTICE.TXT']
-   # Tests
+  # Tests
   s.test_files = s.files.grep(%r{^(test|spec|features)/})
 
   # Special flag to let us know this is actually a logstash plugin
   s.metadata = { "logstash_plugin" => "true", "logstash_group" => "filter" }
 
   # Gem dependencies
-  s.add_runtime_dependency "logstash-core", "2.4.1"
-  s.add_runtime_dependency "logstash-core-event", "2.4.1"
-  s.add_runtime_dependency "logstash-core-plugin-api", "1.60.5"
+  s.add_runtime_dependency "logstash-core-plugin-api", "~> 2.0"
+ 
   s.add_runtime_dependency "lru_redux", "1.1.0"
+#  s.add_runtime_dependency "httpclient", "2.8.3"
 
-  s.add_development_dependency "logstash-devutils"
+  s.add_development_dependency "logstash-devutils", "~>1.3", ">= 1.3.1"
   s.add_development_dependency "timecop", "~> 0.7"
 end

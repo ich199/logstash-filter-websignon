@@ -1,37 +1,47 @@
 # encoding: utf-8
-require "logstash/filters/base"
-require "logstash/namespace"
-require "lru_redux"
+require 'logstash/filters/base'
+require 'logstash/namespace'
+require 'lru_redux'
+#require 'httpclient'
+require 'net/http'
 
 class LogStash::Filters::Websignon < LogStash::Filters::Base
 
-  config_name "websignon"
+  config_name 'websignon'
+  require 'logstash/filters/websignon/websignon_exceptions'
 
-  # set the websignon lookup url
+  # websignon lookup url
   config :websignon_url, :validate => :string, :required => true
 
-  # set the websignon lookup timeout
+  # websignon lookup timeout
   config :websignon_timeout, :validate => :number, :default => 30
 
-  # field that contains the username to lookup
+  # Event field that contains the username to lookup
   config :username_field, :validate => :string, :required => true
 
-  # set the size of cache for successful requests
+  # Cache size for known username attributes
   config :hit_cache_size, :validate => :number, :default => 0
 
-  # how long to cache successful requests (in seconds)
+  # How long to cache known username attributes (in seconds)
   config :hit_cache_ttl, :validate => :number, :default => 86400
 
-  # cache size for failed requests
+  # Cache size for unknown usernames
   config :failed_cache_size, :validate => :number, :default => 0
 
-  # how long to cache failed requests (in seconds)
+  # How long to cache unknown usernames (in seconds)
   config :failed_cache_ttl, :validate => :number, :default => 60
 
-  # which attributes are wanted
-  config :attributes, :validate => :array, :default => ["firstname","lastname","dept"]
+  # Array of user attributes that should be added to the event
+  config :attributes, :validate => :array, :default => ['firstname','lastname','dept']
 
-#  config :target, :validate => :string, :default =>
+  # Tag to apply when no such user is found in websignon
+  config :tag_on_nouser, :validate => :array, :default => ['_websignonnosuchuser']
+
+  # The name of the container to put all of the user attributes into.
+  #
+  # If this setting is omitted, attributes will be written to the root of the
+  # event, as individual fields.
+  config :target, :validate => :string 
 
   public
   def register
@@ -56,57 +66,66 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   def websignon_lookup(event)
     username = event.get(@username_field)
     
-    @logger.debug? && @logger.debug("Looking up user", :username => username)
+    @logger.debug? && @logger.debug('Looking up user', :username => username)
 
     begin
-      return nil if @failed_cache && @failed_cache.key?(username) # recently failed lookup, skip
-
+      return nil if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' # recently failed lookup or missing username, skip
       if @hit_cache
         user_attributes = @hit_cache.fetch(username) { do_lookup(username) }
       else
-        user_attributes = do_lookup(username)
+        user_attributes = do_lookup(username) if !(username=='-' || username=='')
       end
 
-      # cache results
-      if user_attributes.nil?
+      #cache results
+      @hit_cache[username] = user_attributes if @hit_cache && !user_attributes.nil?
+      if @target
+        @attributes.each do |attribute|
+          event.set("[#{@target}][#{attribute}]", user_attributes[attribute]) if !user_attributes[attribute].nil?
+        end
+      else 
+        @attributes.each do |attribute|
+          event.set(attribute,user_attributes[attribute]) if !user_attributes[attribute].nil?
+        end
+      end
+
+      rescue LogStash::Filters::Websignon::NoSuchUser => e
         @failed_cache[username] = nil if @failed_cache
-        return nil
-      else
-        @hit_cache[username] = user_attributes if @hit_cache
-      end
-
-      @attributes.each do |attribute|
-        event.set(attribute,user_attributes[attribute])
-      end
-
-      rescue Net::OpenTimeout,Net::ReadTimeout
-        @logger.error("Websignon connection timeout", :username => username, :websignon_url => @websignon_url)
+        @tag_on_nouser.each do |tag|
+          event.tag(tag)
+        end
+        @logger.error('No such user found', :username => e.message)
     end
   end # def websignon_lookup
 
   private
   def do_lookup(username)
-
-    uri = URI.parse(@websignon_url)
+    uri = to_uri(@websignon_url)
     params = {:requestType => 4, :user => username}
     uri.query = URI.encode_www_form(params)
-    Net::HTTP.get_response(uri) do |response|
+
+
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = uri.scheme == 'https'
+    http.open_timeout = http.read_timeout = 5
+
+    http.request_get(uri.request_uri) do |response|
       if !response.body.nil?
         hash = {}
         response.body.split(/\n/).each do |kv|
           attrs = kv.split(/=/,2)
           hash[attrs[0]] = attrs[1]
         end
-
-        if !hash["returnType"].nil? && hash["returnType"] != 54
-          @logger.debug? && @logger.debug("Found user", :username => username)
+        if !hash['returnType'].nil? && hash['returnType'] != '54'
+          @logger.debug? && @logger.debug('Found user', :username => username)
           return hash
         else
-          @logger.debug? && @logger.debug("User not found", :username => username)
+          raise LogStash::Filters::Websignon::NoSuchUser, username
           return nil
         end
       end
     end
+    rescue Timeout::Error => e
+      @logger.error('Websignon Error', :error => e)
   end # def do_lookup
 
   private
@@ -116,7 +135,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
         return URI.parse(url)
       end
       rescue URI::InvalidURIError
-        @logger.error("Invalid websignon url", :url => url)
+        @logger.error('Invalid websignon url', :url => url)
     end
   end # def to_uri
 
