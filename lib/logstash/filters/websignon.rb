@@ -3,7 +3,6 @@ require 'logstash/filters/base'
 require 'logstash/namespace'
 require 'lru_redux'
 require 'httpclient'
-require 'net/http'
 
 class LogStash::Filters::Websignon < LogStash::Filters::Base
 
@@ -106,15 +105,6 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
 
   private
   def do_lookup(username)
-    uri = to_uri(@websignon_url)
-    params = {:requestType => 4, :user => username}
-    uri.query = URI.encode_www_form(params)
-
-
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = uri.scheme == 'https'
-    http.open_timeout = http.read_timeout = 5
-
     response = @http.get(@websignon_url,:query => { :requestType => 4, :user => username })
     if response.status == 200 && !response.body.nil? 
       hash = {}
@@ -133,16 +123,5 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     end
 
   end # def do_lookup
-
-  private
-  def to_uri(url)
-    begin
-      if !url.kind_of?(URI)
-        return URI.parse(url)
-      end
-      rescue URI::InvalidURIError
-        @logger.error('Invalid websignon url', :url => url)
-    end
-  end # def to_uri
 
 end # class LogStash::Filters::Websigon
