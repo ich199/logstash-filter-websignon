@@ -2,7 +2,7 @@
 require 'logstash/filters/base'
 require 'logstash/namespace'
 require 'lru_redux'
-#require 'httpclient'
+require 'httpclient'
 require 'net/http'
 
 class LogStash::Filters::Websignon < LogStash::Filters::Base
@@ -22,14 +22,14 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   # Cache size for known username attributes
   config :hit_cache_size, :validate => :number, :default => 0
 
-  # How long to cache known username attributes (in seconds)
+  # How long to cache known username attributes (in seconds), default 86400 = 24 hours
   config :hit_cache_ttl, :validate => :number, :default => 86400
 
   # Cache size for unknown usernames
   config :failed_cache_size, :validate => :number, :default => 0
 
-  # How long to cache unknown usernames (in seconds)
-  config :failed_cache_ttl, :validate => :number, :default => 60
+  # How long to cache unknown usernames (in seconds), default 3600 = 1 hour
+  config :failed_cache_ttl, :validate => :number, :default => 3600
 
   # Array of user attributes that should be added to the event
   config :attributes, :validate => :array, :default => ['firstname','lastname','dept']
@@ -52,6 +52,10 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     if @failed_cache_size > 0
       @failed_cache = LruRedux::TTL::ThreadSafeCache.new(@failed_cache_size, @failed_cache_ttl)
     end
+
+    @http = HTTPClient.new({ :agent_name => 'Logstash'})
+    # disable cookie storage
+    @http.cookie_manager = nil
   end # def register
 
   public
@@ -69,7 +73,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     @logger.debug? && @logger.debug('Looking up user', :username => username)
 
     begin
-      return nil if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' # recently failed lookup or missing username, skip
+      return nil if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' || username.nil? # recently failed lookup or missing username, skip
       if @hit_cache
         user_attributes = @hit_cache.fetch(username) { do_lookup(username) }
       else
@@ -94,6 +98,9 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
           event.tag(tag)
         end
         @logger.error('No such user found', :username => e.message)
+        
+      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, Timeout => e
+        @logger.error('Websignon Connection Error', :error => e)
     end
   end # def websignon_lookup
 
@@ -108,24 +115,23 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     http.use_ssl = uri.scheme == 'https'
     http.open_timeout = http.read_timeout = 5
 
-    http.request_get(uri.request_uri) do |response|
-      if !response.body.nil?
-        hash = {}
-        response.body.split(/\n/).each do |kv|
-          attrs = kv.split(/=/,2)
-          hash[attrs[0]] = attrs[1]
-        end
-        if !hash['returnType'].nil? && hash['returnType'] != '54'
-          @logger.debug? && @logger.debug('Found user', :username => username)
-          return hash
-        else
-          raise LogStash::Filters::Websignon::NoSuchUser, username
-          return nil
-        end
+    response = @http.get(@websignon_url,:query => { :requestType => 4, :user => username })
+    if response.status == 200 && !response.body.nil? 
+      hash = {}
+      response.body.split(/\n/).each do |kv|
+        attrs = kv.split(/=/,2)
+        hash[attrs[0]] = attrs[1]
       end
+      if !hash['returnType'].nil? && hash['returnType'] != '54'
+        @logger.debug? && @logger.debug('Found user', :username => username)
+        return hash
+      else
+        raise LogStash::Filters::Websignon::NoSuchUser, username
+      end
+    else
+      raise LogStash::Filters::Websignon::ConnectionError, response
     end
-    rescue Timeout::Error => e
-      @logger.error('Websignon Error', :error => e)
+
   end # def do_lookup
 
   private
