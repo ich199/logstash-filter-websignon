@@ -12,8 +12,8 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   # websignon lookup url
   config :websignon_url, :validate => :string, :required => true
 
-  # websignon lookup timeout
-  config :websignon_timeout, :validate => :number, :default => 30
+  # websignon connection/lookup timeout (in seconds)
+  config :websignon_timeout, :validate => :number, :default => 5
 
   # Event field that contains the username to lookup
   config :username_field, :validate => :string, :required => true
@@ -52,7 +52,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
       @failed_cache = LruRedux::TTL::ThreadSafeCache.new(@failed_cache_size, @failed_cache_ttl)
     end
 
-    @http = HTTPClient.new({ :agent_name => 'Logstash'})
+    @http = HTTPClient.new({ :agent_name => 'Logstash', :connect_timeout => @websignon_timeout})
     # disable cookie storage
     @http.cookie_manager = nil
   end # def register
@@ -72,7 +72,15 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     @logger.debug? && @logger.debug('Looking up user', :username => username)
 
     begin
-      return nil if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' || username.nil? # recently failed lookup or missing username, skip
+
+      if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' || username.nil? 
+        # recently failed lookup or missing username, skip
+        @tag_on_nouser.each do |tag|
+          event.tag(tag)
+        end
+        return nil
+      end
+
       if @hit_cache
         user_attributes = @hit_cache.fetch(username) { do_lookup(username) }
       else
@@ -98,8 +106,9 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
         end
         @logger.error('No such user found', :username => e.message)
         
-      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, Timeout => e
+      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, HTTPClient::TimeoutError => e
         @logger.error('Websignon Connection Error', :error => e)
+
     end
   end # def websignon_lookup
 
