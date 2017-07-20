@@ -76,7 +76,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
       if (@failed_cache && @failed_cache.key?(username)) || username=='' || username=='-' || username.nil? 
         # recently failed lookup or missing username, skip
         @tag_on_nouser.each do |tag|
-          event.tag(tag)
+          event.tag(tag) if !(username=='' || username=='-' || username.nil?)
         end
         return nil
       end
