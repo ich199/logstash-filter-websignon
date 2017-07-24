@@ -114,7 +114,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
 
   private
   def do_lookup(username)
-    response = @http.get(@websignon_url,:query => { :requestType => 4, :user => username })
+    response = @http.post(@websignon_url,:body => { :requestType => 4, :user => username })
     if response.status == 200 && !response.body.nil? 
       hash = {}
       response.body.split(/\n/).each do |kv|
