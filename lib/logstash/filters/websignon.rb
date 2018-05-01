@@ -106,7 +106,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
         end
         @logger.error('No such user found', :username => e.message)
         
-      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, HTTPClient::TimeoutError, HTTPClient::KeepAliveDisconnected => e
+      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, HTTPClient::TimeoutError, HTTPClient::KeepAliveDisconnected, Errno::ECONNREFUSED => e
         @logger.error('Websignon Connection Error', :error => e)
 
     end
