@@ -55,6 +55,8 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     @http = HTTPClient.new({ :agent_name => 'Logstash', :connect_timeout => @websignon_timeout})
     # disable cookie storage
     @http.cookie_manager = nil
+    # set SSL CA trust bundle
+    @http.ssl_config.set_trust_ca('/etc/pki/tls/certs/ca-bundle.crt')
   end # def register
 
   public
