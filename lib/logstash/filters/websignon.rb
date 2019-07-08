@@ -36,6 +36,12 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   # Tag to apply when no such user is found in websignon
   config :tag_on_nouser, :validate => :array, :default => ['_websignonnosuchuser']
 
+  # TLS version for connecting to websignon
+  config :ssl_version, :validate => :string, :default => 'TLSv1_2'
+
+  # TLS Ciphers for connecting to websignon
+  config :ciphers, :validate => :string, :default => 'TLSv1_2:!MEDIUM:!LOW:@STRENGTH'
+
   # The name of the container to put all of the user attributes into.
   #
   # If this setting is omitted, attributes will be written to the root of the
@@ -57,6 +63,8 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     @http.cookie_manager = nil
     # set SSL CA trust bundle
     @http.ssl_config.set_trust_ca('/etc/pki/tls/certs/ca-bundle.crt')
+    @http.ssl_config.ssl_version = @ssl_version
+    @http.ssl_config.ciphers = @ciphers
   end # def register
 
   public
