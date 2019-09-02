@@ -48,6 +48,9 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   # event, as individual fields.
   config :target, :validate => :string 
 
+  # Additional request headers to be sent to websignon
+  config :request_headers, :validate => :array, :default => [['Accept-Charset','utf-8']]
+
   public
   def register
     if @hit_cache_size > 0
@@ -124,7 +127,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
 
   private
   def do_lookup(username)
-    response = @http.post(@websignon_url,:body => { :requestType => 4, :user => username })
+    response = @http.post(@websignon_url,:body => { :requestType => 4, :user => username }, :header => @request_headers)
     if response.status == 200 && !response.body.nil? 
       hash = {}
       response.body.split(/\n/).each do |kv|
