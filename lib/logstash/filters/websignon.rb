@@ -40,7 +40,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   config :ssl_version, :validate => :string, :default => 'TLSv1_2'
 
   # TLS Ciphers for connecting to websignon
-  config :ciphers, :validate => :string, :default => 'TLSv1_2:!MEDIUM:!LOW:@STRENGTH'
+  config :ciphers, :validate => :string, :default => 'HIGH:!MEDIUM:!LOW:@STRENGTH'
 
   # The name of the container to put all of the user attributes into.
   #
