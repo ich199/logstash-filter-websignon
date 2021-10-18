@@ -40,7 +40,7 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   config :ssl_version, :validate => :string, :default => 'TLSv1_2'
 
   # TLS Ciphers for connecting to websignon
-  config :ciphers, :validate => :string, :default => 'HIGH:!MEDIUM:!LOW:@STRENGTH'
+  config :ciphers, :validate => :string, :default => 'ALL:!aNULL:!eNULL:!SSLv2'
 
   # The name of the container to put all of the user attributes into.
   #
@@ -65,9 +65,11 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     # disable cookie storage
     @http.cookie_manager = nil
     # set SSL CA trust bundle
-    @http.ssl_config.set_trust_ca('/etc/pki/tls/certs/ca-bundle.crt')
+    @http.ssl_config.clear_cert_store
+    @http.ssl_config.add_trust_ca('/etc/pki/tls/certs/ca-bundle.crt')
     @http.ssl_config.ssl_version = @ssl_version
     @http.ssl_config.ciphers = @ciphers
+    @http.ssl_config.verify_mode = OpenSSL::SSL::VERIFY_NONE
   end # def register
 
   public
