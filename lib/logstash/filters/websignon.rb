@@ -2,7 +2,7 @@
 require 'logstash/filters/base'
 require 'logstash/namespace'
 require 'lru_redux'
-require 'httpclient'
+require 'manticore'
 
 class LogStash::Filters::Websignon < LogStash::Filters::Base
 
@@ -37,10 +37,10 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
   config :tag_on_nouser, :validate => :array, :default => ['_websignonnosuchuser']
 
   # TLS version for connecting to websignon
-  config :ssl_version, :validate => :string, :default => 'TLSv1_2'
+  config :ssl_versions, :validate => :array, :default => ['TLSv1.2']
 
-  # TLS Ciphers for connecting to websignon
-  config :ciphers, :validate => :string, :default => 'ALL:!aNULL:!eNULL:!SSLv2'
+  # TLS Ciphers for connecting to websignon (Java/IANA style cipher names)
+  config :ciphers, :validate => :array, :default => ['TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256','TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256','TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384','TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384']
 
   # The name of the container to put all of the user attributes into.
   #
@@ -60,16 +60,15 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
     if @failed_cache_size > 0
       @failed_cache = LruRedux::TTL::ThreadSafeCache.new(@failed_cache_size, @failed_cache_ttl)
     end
-
-    @http = HTTPClient.new({ :agent_name => 'Logstash', :connect_timeout => @websignon_timeout})
-    # disable cookie storage
-    @http.cookie_manager = nil
-    # set SSL CA trust bundle
-    @http.ssl_config.clear_cert_store
-    @http.ssl_config.add_trust_ca('/etc/pki/tls/certs/ca-bundle.crt')
-    @http.ssl_config.ssl_version = @ssl_version
-    @http.ssl_config.ciphers = @ciphers
-    @http.ssl_config.verify_mode = OpenSSL::SSL::VERIFY_NONE
+    @http = Manticore::Client.new({:user_agent => 'Logstash',
+                                   :connect_timeout => @websignon_timeout,
+                                   :keepalive => false,
+                                   :ssl => {
+                                     :cafile => '/etc/pki/tls/certs/ca-bundle.crt',
+                                     :protocols => @ssl_versions,
+                                     :cipher_suites => @ciphers
+                                   }
+                                  })
   end # def register
 
   public
@@ -120,8 +119,8 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
           event.tag(tag)
         end
         @logger.error('No such user found', :username => e.message)
-        
-      rescue LogStash::Filters::Websignon::ConnectionError, SocketError, OpenSSL::SSL::SSLError, HTTPClient::TimeoutError, HTTPClient::KeepAliveDisconnected, Errno::ECONNREFUSED => e
+
+      rescue LogStash::Filters::Websignon::ConnectionError, Manticore::Timeout, Manticore::SocketException, Manticore::ClientProtocolException, Manticore::ResolutionFailure, SocketError, OpenSSL::SSL::SSLError, Errno::ECONNREFUSED => e
         @logger.error('Websignon Connection Error', :error => e)
 
     end
@@ -129,8 +128,8 @@ class LogStash::Filters::Websignon < LogStash::Filters::Base
 
   private
   def do_lookup(username)
-    response = @http.post(@websignon_url,:body => { :requestType => 4, :user => username }, :header => @request_headers)
-    if response.status == 200 && !response.body.nil? 
+    response = @http.post(@websignon_url,:params => { :requestType => 4, :user => username }, :headers => @request_headers)
+    if response.code == 200 && !response.body.nil? 
       hash = {}
       response.body.split(/\n/).each do |kv|
         attrs = kv.split(/=/,2)
