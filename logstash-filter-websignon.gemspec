@@ -21,7 +21,7 @@ Gem::Specification.new do |s|
   #s.add_runtime_dependency "logstash-core-plugin-api", ">= 1.4.0", "< 2.0.0"
   s.add_runtime_dependency "logstash-core-plugin-api", "~> 2.0"
   s.add_runtime_dependency "lru_redux", "1.1.0"
-  s.add_runtime_dependency "manticore", ">= 0.6", "<0.7"
+  s.add_runtime_dependency "manticore", ">= 0.6", "< 0.7"
 
   s.add_development_dependency 'logstash-devutils'
   #s.add_development_dependency "timecop", "~> 0.7"
